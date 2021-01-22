@@ -1,11 +1,12 @@
 use std::mem;
 use std::ops::DerefMut;
+use std::path::Path;
 use std::sync::Mutex;
 
 use diesel::prelude::*;
 
 use rocket::request::{Form, FromForm};
-use rocket::response::{status::NotFound, Flash, Redirect};
+use rocket::response::{status::NotFound, Flash, NamedFile, Redirect};
 use rocket::{Request, State};
 
 use rocket_contrib::serve::StaticFiles;
@@ -131,7 +132,8 @@ fn network_mempool_makeblock(
         .flat_map(|e| e.utxo_proofs().iter().cloned())
         .collect::<Vec<_>>();
 
-    let (new_state, catchup) = mempool.make_block();
+    let verified_block = mempool.make_block();
+    let new_state = verified_block.blockchain_state();
 
     let new_block_record = BlockRecord {
         height: new_state.tip.height as i32,
@@ -160,7 +162,12 @@ fn network_mempool_makeblock(
 
             for rec in recs.into_iter() {
                 let mut wallet = rec.wallet();
-                wallet.process_block(&verified_txs, &txs, new_state.tip.height, &catchup);
+                wallet.process_block(
+                    &verified_txs,
+                    &txs,
+                    new_state.tip.height,
+                    &verified_block.catchup,
+                );
                 let rec = AccountRecord::new(&wallet);
                 diesel::update(account_records.filter(owner_id.eq(&rec.owner_id)))
                     .filter(alias.eq(&rec.alias))
@@ -176,7 +183,7 @@ fn network_mempool_makeblock(
     let block_id = new_state.tip.id();
 
     // If tx succeeded, reset the mempool to the new state.
-    mem::replace(mempool.deref_mut(), Mempool::new(new_state, timestamp_ms));
+    let _ = mem::replace(mempool.deref_mut(), Mempool::new(new_state, timestamp_ms));
 
     let msg = format!("Block published: {}", hex::encode(&block_id));
     Ok(Flash::success(
@@ -285,6 +292,7 @@ fn nodes_show(
     let context = json!({
         "sidebar": sidebar.json,
         "wallet": wallet_pending.to_json(),
+        "wallet_xpub": util::to_json_value(&wallet_pending.xprv.to_xpub()),
         "balances": balances,
         "others": others_accs,
         "pending_txs": pending_txs.into_iter().map(|atx| {
@@ -363,7 +371,7 @@ fn pay(
         qty: form.qty,
         flv: asset_record.flavor(),
     };
-    let payment_receiver_witness = recipient.account.generate_receiver(payment);
+    let payment_receiver_witness = recipient.generate_receiver(payment);
     let payment_receiver = &payment_receiver_witness.receiver;
 
     // Note: at this point, recipient saves the increased seq #,
@@ -583,7 +591,7 @@ fn assets_create(
         qty: form.qty,
         flv: asset_record.flavor(),
     };
-    let payment_receiver_witness = recipient.account.generate_receiver(payment);
+    let payment_receiver_witness = recipient.generate_receiver(payment);
     let payment_receiver = &payment_receiver_witness.receiver;
 
     // Note: at this point, recipient saves the increased seq #,
@@ -670,6 +678,11 @@ fn assets_create(
     }
 }
 
+#[get("/favicon.ico")]
+pub fn favicon() -> Option<NamedFile> {
+    NamedFile::open(Path::new("static/favicon.ico")).ok()
+}
+
 #[catch(404)]
 fn not_found(req: &Request<'_>) -> Template {
     let sidebar = req.guard::<Sidebar>().expect("Sidebar guard never fails.");
@@ -708,7 +721,6 @@ pub fn launch_rocket_app(p2p_handle: net::P2PHandle) {
         .manage(bp_gens)
         .manage(Mutex::new(p2p_handle))
         .mount("/static", StaticFiles::from("static"))
-        .mount("/favicon.ico", StaticFiles::from("static"))
         .mount(
             "/",
             routes![
@@ -722,7 +734,8 @@ pub fn launch_rocket_app(p2p_handle: net::P2PHandle) {
                 nodes_create,
                 assets_show,
                 assets_create,
-                pay
+                pay,
+                favicon
             ],
         )
         .launch();

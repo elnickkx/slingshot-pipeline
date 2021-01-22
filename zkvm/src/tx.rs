@@ -54,7 +54,7 @@ pub struct TxHeader {
 }
 
 /// Instance of a transaction that is not signed yet.
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsignedTx {
     /// Header metadata
     pub header: TxHeader,
@@ -300,6 +300,14 @@ impl TxLog {
     pub fn outputs(&self) -> impl Iterator<Item = &Contract> {
         self.0.iter().filter_map(|entry| match entry {
             TxEntry::Output(contract) => Some(contract),
+            _ => None,
+        })
+    }
+
+    /// Iterator over all data entries
+    pub fn data_entries<'a>(&'a self) -> impl Iterator<Item = &'a [u8]> {
+        self.0.iter().filter_map(|entry| match entry {
+            TxEntry::Data(buf) => Some(&buf[..]),
             _ => None,
         })
     }

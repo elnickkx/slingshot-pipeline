@@ -3,7 +3,7 @@ use zkvm::{Commitment, Contract, Predicate, Program, String, Value};
 
 /// Represents a ZkVM Token with unique flavor and embedded
 /// metadata protected by a user-supplied Predicate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Token {
     issuance_predicate: Predicate,
     metadata: Vec<u8>,
@@ -31,9 +31,9 @@ impl Token {
     pub fn issue<'a>(&self, program: &'a mut Program, qty: u64) -> &'a mut Program {
         program
             .push(Commitment::blinded(qty)) // stack: qty
-            .var() // stack: qty-var
+            .commit() // stack: qty-var
             .push(Commitment::unblinded(self.flavor())) // stack: qty-var, flv
-            .var() // stack: qty-var, flv-var
+            .commit() // stack: qty-var, flv-var
             .push(String::Opaque(self.metadata.clone())) // stack: qty-var, flv-var, data
             .push(self.issuance_predicate.clone()) // stack: qty-var, flv-var, data, flv-pred
             .issue() // stack: issue-contract
@@ -53,6 +53,9 @@ impl Token {
 
     /// Adds instructions to a program to retire a given UTXO.
     /// TBD: accept a qty/Token pairing to retire.
+    ///
+    /// DEPRECATED!
+    ///
     pub fn retire<'a>(program: &'a mut Program, prev_output: Contract) -> &'a mut Program {
         program.push(prev_output).input().signtx().retire()
     }

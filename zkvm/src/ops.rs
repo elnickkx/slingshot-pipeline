@@ -49,30 +49,30 @@ pub enum Instruction {
     /// Note: `roll:0` is a no-op, `roll:1` swaps the top two items.
     Roll(usize),
 
-    /// _a_ **const** → _expr_
+    /// _a_ **scalar** → _expr_
     ///
     /// 1. Pops a _scalar_ `a` from the stack.
     /// 2. Creates an _expression_ `expr` with weight `a` assigned to an R1CS constant `1`.
     /// 3. Pushes `expr` to the stack.
     ///
     /// Fails if `a` is not a valid _scalar_.
-    Const,
+    Scalar,
 
-    /// _P_ **var** → _v_
+    /// _P_ **commit** → _v_
     ///
     /// 1. Pops a _point_ `P` from the stack.
     /// 2. Creates a _variable_ `v` from a _Pedersen commitment_ `P`.
     /// 3. Pushes `v` to the stack.
     ///
     /// Fails if `P` is not a valid _point_.
-    Var,
+    Commit,
 
     /// **alloc** → _expr_
     ///
     /// 1. Allocates a low-level variable in the _constraint system_ and wraps it in the _expression_ with weight 1.
     /// 2. Pushes the resulting expression to the stack.
     ///
-    /// This is different from `var`: the variable created by `alloc` is _not_ represented by an individual Pedersen commitment and therefore can be chosen freely when the transaction is constructed.
+    /// This is different from `commit`: the variable created by `alloc` is _not_ represented by an individual Pedersen commitment and therefore can be chosen freely when the transaction is constructed.
     Alloc(Option<ScalarWitness>),
 
     /// **locktime** → _expr_
@@ -504,10 +504,10 @@ pub enum Opcode {
     Dup = 0x03,
     /// A code for [Instruction::Roll].
     Roll = 0x04,
-    /// A code for [Instruction::Const].
-    Const = 0x05,
-    /// A code for [Instruction::Var]
-    Var = 0x06,
+    /// A code for [Instruction::Scalar].
+    Scalar = 0x05,
+    /// A code for [Instruction::Commit]
+    Commit = 0x06,
     /// A code for [Instruction::Alloc]
     Alloc = 0x07,
     /// A code for [Instruction::Locktime]
@@ -606,8 +606,8 @@ impl Encodable for Instruction {
                 write(Opcode::Roll)?;
                 w.write_u32(b"k", *idx as u32)?;
             }
-            Instruction::Const => write(Opcode::Const)?,
-            Instruction::Var => write(Opcode::Var)?,
+            Instruction::Scalar => write(Opcode::Scalar)?,
+            Instruction::Commit => write(Opcode::Commit)?,
             Instruction::Alloc(_) => write(Opcode::Alloc)?,
             Instruction::Locktime => write(Opcode::Locktime)?,
             Instruction::Expr => write(Opcode::Expr)?,
@@ -704,8 +704,8 @@ impl Instruction {
                 let idx = program.read_size()?;
                 Ok(Instruction::Roll(idx))
             }
-            Opcode::Const => Ok(Instruction::Const),
-            Opcode::Var => Ok(Instruction::Var),
+            Opcode::Scalar => Ok(Instruction::Scalar),
+            Opcode::Commit => Ok(Instruction::Commit),
             Opcode::Alloc => Ok(Instruction::Alloc(None)),
             Opcode::Locktime => Ok(Instruction::Locktime),
             Opcode::Expr => Ok(Instruction::Expr),

@@ -110,7 +110,7 @@ pub struct Value {
 /// Represents a cleartext value of an issued asset in the VM.
 /// This is not the same as `spacesuit::Value` since it is guaranteed to be in-range
 /// (negative quantity is not representable with this type).
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ClearValue {
     /// Cleartext quantity integer
     pub qty: u64,
@@ -135,7 +135,7 @@ impl Item {
     pub fn to_program(self) -> Result<ProgramItem, VMError> {
         match self {
             Item::Program(x) => Ok(x),
-            _ => Err(VMError::TypeNotProgramItem),
+            _ => Err(VMError::TypeNotProgram),
         }
     }
 
@@ -349,6 +349,54 @@ impl Value {
             (Some(ScalarWitness::Integer(q)), Some(ScalarWitness::Scalar(f))) => Some((q, f)),
             (_, _) => None,
         }
+    }
+}
+
+impl Encodable for Value {
+    fn encode(&self, w: &mut impl Writer) -> Result<(), WriteError> {
+        w.write_point(b"qty", &self.qty.to_point())?;
+        w.write_point(b"flv", &self.flv.to_point())?;
+        Ok(())
+    }
+}
+impl ExactSizeEncodable for Value {
+    fn encoded_size(&self) -> usize {
+        64
+    }
+}
+
+impl ClearValue {
+    /// Selects a subset of coins to be equal or greater than the given value.
+    /// Returns the list of selected values and an amount of _change_ quantity.
+    pub fn select_coins<I, T>(&self, coins: I) -> Option<(Vec<T>, ClearValue)>
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<ClearValue>,
+    {
+        let (collected_coins, total_spent) = coins
+            .into_iter()
+            .filter(|coin| coin.as_ref().flv == self.flv)
+            .fold(
+                (Vec::new(), 0u64),
+                |(mut collected_coins, mut total_spent), coin| {
+                    if total_spent < self.qty {
+                        total_spent += coin.as_ref().qty;
+                        collected_coins.push(coin);
+                    }
+                    (collected_coins, total_spent)
+                },
+            );
+
+        // If we did not have sufficient amount of coins, fail.
+        if total_spent < self.qty {
+            return None;
+        }
+
+        let change = ClearValue {
+            qty: total_spent - self.qty,
+            flv: self.flv,
+        };
+        Some((collected_coins, change))
     }
 }
 
